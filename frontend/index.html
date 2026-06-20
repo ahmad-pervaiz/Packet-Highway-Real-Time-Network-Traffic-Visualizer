@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Packet Highway — Real-Time Network Traffic Visualizer</title>
+  <meta name="description" content="Visualize live network traffic as vehicles on an animated highway. Classify TCP, UDP, ICMP, DNS, HTTPS, SSH, QUIC packets in real time." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="/static/stats-dashboard.js" defer></script>
+  <script type="module" src="/static/websocket-client.js" defer></script>
+  <script type="module" src="/static/road.js" defer></script>
+  <script type="module" src="/static/main.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- ─── Header ──────────────────────────────────────────────── -->
+    <header class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">Real-time network traffic visualizer</p>
+        <h1>Packet<span class="gradient-text">Highway</span></h1>
+        <p class="lede">Every packet becomes a vehicle. Every protocol gets its own lane. Click any vehicle to inspect full capture detail — Wireshark-level accuracy, highway-speed visualization.</p>
+      </div>
+      <div class="notice glass-panel" id="legalNotice">
+        <div class="notice-icon">⚠️</div>
+        <div>
+          <strong>Ethical Use Only</strong>
+          <p>Only capture traffic on networks and devices you own or have explicit permission to monitor. Packet sniffing requires elevated OS privileges.</p>
+          <p class="notice-detail">Linux/macOS → <code>sudo</code> &nbsp;|&nbsp; Windows → Administrator + <a href="https://npcap.com/#download" target="_blank" rel="noopener">Npcap</a></p>
+        </div>
+      </div>
+    </header>
+
+    <!-- ─── Controls Bar ────────────────────────────────────────── -->
+    <section class="controls glass-panel" id="controlBar">
+      <div class="control-group">
+        <label for="interfaceSelect">Network Interface</label>
+        <div class="select-wrapper">
+          <select id="interfaceSelect"><option value="">Loading…</option></select>
+        </div>
+      </div>
+      <button id="refreshInterfaces" class="btn btn-ghost" title="Refresh interface list">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      </button>
+      <button id="startCapture" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Start Sniffing
+      </button>
+      <button id="stopCapture" class="btn btn-danger" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        Stop
+      </button>
+      <div class="control-spacer"></div>
+      <div id="statusPill" class="status-pill idle">
+        <span class="status-dot"></span>
+        Idle
+      </div>
+      <div id="jamIndicator" class="jam-indicator calm">
+        <span class="jam-icon">🚗</span>
+        Traffic calm
+      </div>
+    </section>
+
+    <!-- ─── Error Banner ────────────────────────────────────────── -->
+    <div id="captureError" class="capture-error" aria-live="polite"></div>
+
+    <!-- ─── Main Layout ─────────────────────────────────────────── -->
+    <main class="layout">
+      <!-- Road view -->
+      <section class="road-panel glass-panel">
+        <div class="road-header">
+          <h2>Highway View</h2>
+          <div class="legend" id="vehicleLegend"></div>
+        </div>
+        <div class="canvas-wrapper">
+          <canvas id="roadCanvas" width="1400" height="520"></canvas>
+        </div>
+      </section>
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+
+        <!-- Stats card -->
+        <section class="glass-panel stats-card">
+          <h2>Live Statistics</h2>
+          <div class="stat-row">
+            <div class="stat-block">
+              <span class="stat-label">Packets / sec</span>
+              <strong id="ppsValue" class="stat-value glow-text">0</strong>
+            </div>
+            <div class="stat-block">
+              <span class="stat-label">Total Captured</span>
+              <strong id="totalPackets" class="stat-value">0</strong>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="protocolChart" height="240"></canvas>
+          </div>
+          <div class="top-ip-grid">
+            <div>
+              <span class="stat-label">Top Sources</span>
+              <ul id="topSources"><li class="muted">Waiting for traffic…</li></ul>
+            </div>
+            <div>
+              <span class="stat-label">Top Destinations</span>
+              <ul id="topDestinations"><li class="muted">Waiting for traffic…</li></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- Packet detail card -->
+        <section id="packetDetail" class="glass-panel detail-card">
+          <h2>Packet Inspector</h2>
+          <p class="muted" id="detailPlaceholder">Click any vehicle on the highway to inspect its full packet data.</p>
+          <dl id="packetFields"></dl>
+        </section>
+
+      </aside>
+    </main>
+
+    <!-- ─── Footer ──────────────────────────────────────────────── -->
+    <footer class="app-footer">
+      <p>Packet Highway &mdash; CN Semester Project &mdash; Built with Scapy + FastAPI + HTML5 Canvas</p>
+    </footer>
+  </div>
+</body>
+</html>
